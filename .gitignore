@@ -1,0 +1,18 @@
+data/
+results/
+
+exploration_exploitation.egg-info/
+
+# ignore python caches
+.venv/
+venv/
+venv*/
+__pycache__
+*.pyc
+
+# ignore test experiments
+test.json
+
+# ignore editor settings
+.vscode
+.DS_Store
