@@ -10,8 +10,10 @@ def read_eeg_file(path: str):
     """
     data = sio.loadmat(path)
     if 'ERP' in data.keys():
-        return data['ERP']
-        # return data['ERP'][0, 0][0]
+        data = data['ERP']
+    elif 'WAVT' in data.keys():
+        data =  data['WAVT']
+    return data
 
 def read_csv_file(path: str):
     """

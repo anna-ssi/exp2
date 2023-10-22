@@ -2,12 +2,26 @@ import numpy as np
 import functools
 from typing import Any, Dict, List, Tuple
 
+import optax
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
+from flax.training import train_state
+
+TrainState = train_state.TrainState
 
 def flatten(x):
     return jnp.reshape(x, (x.shape[0], -1))
+
+def create_train_state(config, params, model):
+  """Create initial training state."""
+
+  tx = optax.chain(
+      optax.adam(learning_rate=config.lr, b1=config.beta1, b2=config.beta2),
+      optax.add_decayed_weights(weight_decay=config.weight_decay),
+  )
+  state = TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+  return state
 
 class LSTM(nn.Module):
   hidden_size: int
@@ -71,46 +85,31 @@ class MLP(nn.Module):
     return logits, carry
 
 
-def build_net(inputs: Tuple, hypers: Dict[str, Any], rng: Any):
+def build_net(inputs: Tuple, params, rng: Any):
     def _inner():
-        name = hypers['type']
-        size = hypers['size']
-        hidden = hypers['hidden']
+        type = params.network.type
+        hidden = params.network.hidden
+        size = params.network.size
         
         layer_size = [hidden] * size
-        print(f'Building {name} with {layer_size} layers')
 
-        if name == 'mlp':
+        if type == 'mlp':
             layers = MLP(layer_size)
 
-        elif name == 'cnn':
+        elif type  == 'cnn':
             layers = CNN(layer_size)
         
-        elif name == 'lstm':
+        elif type  == 'lstm':
             layers = LSTM(layer_size[0])
             
         return layers
 
     network = _inner()
     sample_input = jnp.zeros((1,) + tuple(inputs))
-    carry = network.initialize_carry(inputs) if params['type'] == 'lstm' else None
+    carry = network.initialize_carry(inputs) if params.network.type == 'lstm' else None
     net_params = network.init(rng, sample_input, carry)
-        
-    return network, net_params, carry
+    
+    train_state = create_train_state(params.optim, net_params, network)
+    return train_state, carry
 
 
-if __name__ == '__main__':
-    params = {
-        'type': 'cnn',
-        'size': 3,
-        'hidden': 13
-    }
-    
-    # x = jnp.ones((1, 10)) # mlps
-    # x = jnp.ones((1, 1, 10)) # lstms
-    x = jnp.ones((1, 10, 10)) # cnns
-    rng = jax.random.PRNGKey(1)
-    net, net_params, carry = build_net(x.shape, params, rng)
-    
-    out, carry = net.apply(net_params, x, carry)
-    print(out)

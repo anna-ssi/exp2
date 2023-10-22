@@ -1,0 +1,13 @@
+{
+    "seed": 1,
+    "batch_size": 32,
+    "network": {
+        "type": "cnn",
+        "size": 3,
+        "hidden": 13
+    },
+    "optim": {
+        "type": "adam",
+        "lr": 0.001
+    }
+}
