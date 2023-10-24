@@ -20,6 +20,8 @@ class ConfigLoader:
     def __init__(self, config: Dict[str, Any]):
         self.seed = config['seed']
         self.batch_size = config['batch_size']
+        self.epochs = config['epochs']
+        self.test_size = config['test_size']
         
         self.network = NetworkConfig(**config['network'])
         self.optim = OptimConfig(**config['optim'])

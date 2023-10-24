@@ -2,12 +2,12 @@ import json
 import argparse
 
 import jax
-import jax.numpy as jnp
 from flax.training import checkpoints
 
 from src.models.network import build_net
+from src.models.train import train_and_evaluate
 from src.utils.config_loader import ConfigLoader
-from src.utils.load_dataset import EEGDataset
+from src.utils.load_dataset import TrainTestSplit
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -19,18 +19,19 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', action='store_true', default=False)
 
     args = parser.parse_args()
-    dataset = EEGDataset(args.data_path)
     params = ConfigLoader(json.load(open(args.exp, 'r')))
+    dataset = TrainTestSplit(args.data_path, params.test_size)
+    train_data, test_data = dataset.split()
     
-    eeg, labels = dataset.get_batch(1)
-    x = jnp.expand_dims(eeg[0], axis=0) 
-    y = labels[0]
     
+    eeg, _ = train_data.batch(1).as_numpy_iterator().next()
     rng = jax.random.PRNGKey(params.seed)
-    train_state, carry = build_net(x.shape, params, rng)
+    train_state, carry = build_net(eeg.shape, params, rng)
     
-    out, carry = train_state.apply_fn(train_state.params, x, carry)
-    print(out)
+    train_batches = train_data.batch(params.batch_size)
+    test_batches = test_data.batch(params.batch_size)
+    
+    train_and_evaluate(params, train_batches, test_batches, train_state, carry, rng)
     
     # saving checkpoint
-    checkpoints.save_checkpoint(args.checkpoint_path, train_state, {'step': 0})
+    # checkpoints.save_checkpoint(args.checkpoint_path, train_state, {'step': 0}, overwrite=True)

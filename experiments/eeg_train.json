@@ -1,8 +1,10 @@
 {
     "seed": 1,
-    "batch_size": 32,
+    "batch_size": 3,
+    "epochs": 100,
+    "test_size": 0.1,
     "network": {
-        "type": "cnn",
+        "type": "mlp",
         "size": 3,
         "hidden": 13
     },

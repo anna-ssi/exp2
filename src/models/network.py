@@ -76,7 +76,8 @@ class MLP(nn.Module):
   def __call__(self, x, carry=None):
     w_init = nn.initializers.orthogonal(np.sqrt(2))
     b_init = nn.initializers.constant(0)
-
+    
+    x = flatten(x)
     for width in self.layers:
         x = nn.Dense(width, kernel_init=w_init, bias_init=b_init)(x)
         x = nn.relu(x)

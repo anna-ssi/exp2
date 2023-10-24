@@ -10,3 +10,4 @@ def get_file_names(path: str, ext: str) -> List[str]:
         :return: list of file names
     """
     return sorted([join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith(ext)])
+

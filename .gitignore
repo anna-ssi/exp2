@@ -1,6 +1,7 @@
 data/
 results/
 checkpoints/
+wandb/
 
 exploration_exploitation.egg-info/
 

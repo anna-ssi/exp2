@@ -4,3 +4,5 @@ jax==0.4.18
 jaxlib==0.4.18
 typing-extensions==4.8.0
 flax==0.7.4
+tensorflow==2.14.0
+wandb==0.15.12
