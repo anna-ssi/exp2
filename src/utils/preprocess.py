@@ -12,8 +12,9 @@ def read_eeg_file(path: str):
     if 'ERP' in data.keys():
         data = data['ERP']
     elif 'WAVT' in data.keys():
-        data =  data['WAVT']
+        data = data['WAVT']
     return data
+
 
 def read_csv_file(path: str):
     """

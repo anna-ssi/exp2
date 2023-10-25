@@ -3,6 +3,7 @@ from os.path import isfile, join
 
 from typing import List
 
+
 def get_file_names(path: str, ext: str) -> List[str]:
     """
     Get all file names in a directory
@@ -10,4 +11,3 @@ def get_file_names(path: str, ext: str) -> List[str]:
         :return: list of file names
     """
     return sorted([join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith(ext)])
-
