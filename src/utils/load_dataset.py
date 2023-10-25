@@ -7,15 +7,20 @@ from src.utils.preprocess import read_eeg_file, read_csv_file
 
 
 class TrainTestSplit:
-    def __init__(self, data_path: str, test_size: float = 0.1) -> None:
+    def __init__(self, data_path: str, test_size: float = 0.1, type: str = 'safe') -> None:
         self.test_size = test_size
         self.path = data_path
+        self.type = type
 
         self.data = self.load_eeg()
         self.labels = self.load_label()
         self.clean_data()
+        self.save()
 
     def load_eeg(self):
+        if os.path.exists(os.path.join(self.path, f'{self.type}_eeg.npy')):
+            return np.load(os.path.join(self.path, f'{self.type}_eeg.npy'))
+
         eegs = []
         eeg_paths = get_file_names(os.path.join(self.path, 'eeg'), ext='.mat')
 
@@ -29,6 +34,9 @@ class TrainTestSplit:
         return data
 
     def load_label(self):
+        if os.path.exists(os.path.join(self.path, f'{self.type}_labels.npy')):
+            return np.load(os.path.join(self.path, f'{self.type}_labels.npy'))
+
         labels = []
         label_paths = get_file_names(
             os.path.join(self.path, 'csv'), ext='.csv')
@@ -54,3 +62,7 @@ class TrainTestSplit:
 
         return (tf.data.Dataset.from_tensor_slices((train_data, train_labels)),
                 tf.data.Dataset.from_tensor_slices((test_data, test_labels)))
+
+    def save(self):
+        np.save(os.path.join(self.path, f'{self.type}_eeg.npy'), self.data)
+        np.save(os.path.join(self.path, f'{self.type}_labels.npy'), self.labels)

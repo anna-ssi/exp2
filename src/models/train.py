@@ -19,7 +19,6 @@ logger = logging.getLogger("EXP2")
 
 class Metrics(struct.PyTreeNode):
     """Computed metrics."""
-
     loss: float
     accuracy: float
     count: Optional[int] = None
@@ -27,17 +26,13 @@ class Metrics(struct.PyTreeNode):
 
 def compute_metrics(loss, labels: Array, logits: Array, threshold: float = 0.5) -> Metrics:
     """Computes the metrics, summed across the batch if a batch is provided."""
-    if labels.ndim == 1:
-        labels = jnp.expand_dims(labels, 1)
-
-    # binary_predictions = logits >= threshold
-    # binary_accuracy = jnp.equal(binary_predictions, labels)
-    binary_accuracy = jnp.argmax(logits, -1) == labels
+    binary_predictions = logits >= threshold
+    binary_accuracy = jnp.equal(binary_predictions, labels)
 
     return Metrics(
-        loss=jnp.sum(loss) if loss is not None else 0,
-        accuracy=jnp.sum(binary_accuracy),
-        count=logits.shape[0],
+        loss=loss,
+        accuracy=jnp.mean(binary_accuracy),
+        count=1,
     )
 
 
@@ -48,6 +43,7 @@ def normalize_batch_metrics(batch_metrics: Sequence[Metrics]) -> Metrics:
     total_loss = np.sum([metrics.loss for metrics in batch_metrics]) / total
     total_accuracy = np.sum(
         [metrics.accuracy for metrics in batch_metrics]) / total
+
     # Divide each metric by the total number of items in the data set.
     return Metrics(
         loss=total_loss.item(), accuracy=total_accuracy.item()
@@ -73,16 +69,12 @@ def train_step(
             carry
         )
 
-        if labels.ndim == 1:
-            labels = jnp.expand_dims(labels, 1)
-
         loss = optax.sigmoid_binary_cross_entropy(logits, labels).mean()
         metrics = compute_metrics(loss, labels, logits)
         return loss, (metrics, carry)
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     value, grads = grad_fn(state.params, eeg, labels, carry)
-    print(grads)
     metrics, carry = value[1]
 
     new_state = state.apply_gradients(grads=grads)
@@ -98,7 +90,8 @@ def eval_step(
         eeg,
         carry
     )
-    metrics = compute_metrics(None, labels=labels, logits=logits)
+    loss = optax.sigmoid_binary_cross_entropy(logits, labels).mean()
+    metrics = compute_metrics(loss, labels=labels, logits=logits)
     return metrics
 
 
@@ -125,12 +118,8 @@ def evaluate_model(
     batch_metrics = jax.device_get(batch_metrics)
     metrics = normalize_batch_metrics(batch_metrics)
 
-    logger.info(
-        'eval  epoch %03d loss %.4f accuracy %.2f',
-        epoch,
-        metrics.loss,
-        metrics.accuracy * 100,
-    )
+    print(
+        f'eval {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
     return metrics
 
 
@@ -155,13 +144,8 @@ def train_epoch(
     batch_metrics = jax.device_get(batch_metrics)
     metrics = normalize_batch_metrics(batch_metrics)
 
-    logger.info(
-        'train epoch %03d \n loss %.4f accuracy %.2f',
-        epoch,
-        metrics.loss,
-        metrics.accuracy * 100,
-    )
-
+    print(
+        f'train epoch {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
     return state, metrics, carry
 
 
@@ -182,14 +166,11 @@ def train_and_evaluate(
       The final train state that includes the trained parameters.
     """
     # connecting wandb
-    wandb.init(project="exp2", config=params)
+    # wandb.init(project="exp2", config=params)
 
     # Compile step functions.
-    # train_step_fn = jax.jit(train_step)
-    # eval_step_fn = jax.jit(eval_step)
-    
-    train_step_fn = train_step
-    eval_step_fn = eval_step
+    train_step_fn = jax.jit(train_step)
+    eval_step_fn = jax.jit(eval_step)
 
     # Main training loop.
     print('Starting training...')
@@ -210,6 +191,6 @@ def train_and_evaluate(
                'train_accuracy': train_metrics.accuracy * 100,
                'eval_loss': eval_metrics.loss,
                'eval_accuracy': eval_metrics.accuracy * 100}
-        wandb.log(log, epoch)
+        # wandb.log(log, epoch)
 
     return state

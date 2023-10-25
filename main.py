@@ -1,3 +1,4 @@
+import os
 import json
 import argparse
 
@@ -23,7 +24,8 @@ if __name__ == '__main__':
     params = ConfigLoader(json.load(open(args.exp, 'r')))
     dataset = TrainTestSplit(args.data_path, params.test_size)
     train_data, test_data = dataset.split()
-
+    print(f'{len(train_data)} train samples, {len(test_data)} test samples')
+    
     eeg, _ = train_data.batch(1).as_numpy_iterator().next()
     rng = jax.random.PRNGKey(params.seed)
     train_state, carry = build_net(eeg.shape, params, rng)
@@ -35,4 +37,5 @@ if __name__ == '__main__':
                        train_state, carry, rng)
 
     # saving checkpoint
-    # checkpoints.save_checkpoint(args.checkpoint_path, train_state, {'step': 0}, overwrite=True)
+    chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
+    checkpoints.save_checkpoint(chk_path, train_state, {'step': train_state.step}, overwrite=True)
