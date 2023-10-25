@@ -101,6 +101,10 @@ def build_net(inputs: Tuple, params, rng: Any):
         size = params.network.size
 
         layer_size = [hidden] * size
+         
+        if isinstance(hidden, list):
+            assert len(hidden) == size
+            layer_size = hidden
 
         if type == 'mlp':
             layers = MLP(layer_size)

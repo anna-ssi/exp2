@@ -21,21 +21,26 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', action='store_true', default=False)
 
     args = parser.parse_args()
+    
     params = ConfigLoader(json.load(open(args.exp, 'r')))
+    chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
+    
+    # Loading dataset
     dataset = TrainTestSplit(args.data_path, params.test_size)
     train_data, test_data = dataset.split()
     print(f'{len(train_data)} train samples, {len(test_data)} test samples')
     
+    train_batches = train_data.batch(params.batch_size)
+    test_batches = test_data.batch(params.batch_size)
+    
     eeg, _ = train_data.batch(1).as_numpy_iterator().next()
     rng = jax.random.PRNGKey(params.seed)
     train_state, carry = build_net(eeg.shape, params, rng)
-
-    train_batches = train_data.batch(params.batch_size)
-    test_batches = test_data.batch(params.batch_size)
-
+    
+    # Loading checkpoint
+    train_state = checkpoints.restore_checkpoint(chk_path, train_state)
     train_and_evaluate(params, train_batches, test_batches,
                        train_state, carry, rng)
 
     # saving checkpoint
-    chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
     checkpoints.save_checkpoint(chk_path, train_state, {'step': train_state.step}, overwrite=True)

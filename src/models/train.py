@@ -119,7 +119,7 @@ def evaluate_model(
     metrics = normalize_batch_metrics(batch_metrics)
 
     print(
-        f'eval {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
+        f'Eval {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
     return metrics
 
 
@@ -145,7 +145,7 @@ def train_epoch(
     metrics = normalize_batch_metrics(batch_metrics)
 
     print(
-        f'train epoch {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
+        f'Train {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
     return state, metrics, carry
 
 
@@ -166,7 +166,7 @@ def train_and_evaluate(
       The final train state that includes the trained parameters.
     """
     # connecting wandb
-    # wandb.init(project="exp2", config=params)
+    wandb.init(project="exp2", config=params)
 
     # Compile step functions.
     train_step_fn = jax.jit(train_step)
@@ -191,6 +191,6 @@ def train_and_evaluate(
                'train_accuracy': train_metrics.accuracy * 100,
                'eval_loss': eval_metrics.loss,
                'eval_accuracy': eval_metrics.accuracy * 100}
-        # wandb.log(log, epoch)
+        wandb.log(log, epoch)
 
     return state
