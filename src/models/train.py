@@ -4,47 +4,49 @@ import logging
 import numpy as np
 import jax
 import jax.numpy as jnp
-import optax
+import jax_metrics as jm
 from flax import struct
 from flax.training import train_state
 
 from typing import Any, Dict, Tuple, Optional, Callable, Sequence
 from tqdm import tqdm
 
+from src.models.losses import binary_logistic_loss
+
 Array = jnp.ndarray
 TrainState = train_state.TrainState
 
 logger = logging.getLogger("EXP2")
-
+accuracy = jm.metrics.Accuracy()
 
 class Metrics(struct.PyTreeNode):
     """Computed metrics."""
     loss: float
     accuracy: float
-    count: Optional[int] = None
 
-
-def compute_metrics(loss, labels: Array, logits: Array, threshold: float = 0.5) -> Metrics:
+@jax.jit
+def compute_metrics(labels: Array, logits: Array, threshold: float = 0.5) -> Metrics:
     """Computes the metrics, summed across the batch if a batch is provided."""
+    loss = binary_logistic_loss(labels=labels, logits=logits).mean()
+    
+    binary_predictions = jax.nn.sigmoid(logits) >= threshold
     binary_predictions = logits >= threshold
-    binary_accuracy = jnp.equal(binary_predictions, labels)
+    binary_predictions = jnp.expand_dims(binary_predictions.argmax(axis=1), axis=1)
+    binary_accuracy = jnp.sum(binary_predictions == labels)
 
     return Metrics(
         loss=loss,
-        accuracy=jnp.mean(binary_accuracy),
-        count=1,
+        accuracy=binary_accuracy/len(labels)
     )
 
 
 def normalize_batch_metrics(batch_metrics: Sequence[Metrics]) -> Metrics:
     """Consolidates and normalizes a list of per-batch metrics dicts."""
     # Here we sum the metrics that were already summed per batch.
-    total = np.sum([metrics.count for metrics in batch_metrics])
-    total_loss = np.sum([metrics.loss for metrics in batch_metrics]) / total
-    total_accuracy = np.sum(
-        [metrics.accuracy for metrics in batch_metrics]) / total
+    total_loss = np.mean([metrics.loss for metrics in batch_metrics]) 
+    total_accuracy = np.mean(
+        [metrics.accuracy for metrics in batch_metrics])
 
-    # Divide each metric by the total number of items in the data set.
     return Metrics(
         loss=total_loss.item(), accuracy=total_accuracy.item()
     )
@@ -54,35 +56,30 @@ def train_step(
     state: TrainState,
     eeg: Array,
     labels: Array,
-    rngs: Dict[str, Any],
     carry: Optional[Any] = None,
 ) -> Tuple[TrainState, Dict]:
     """Train for a single step."""
-    # Make sure to get a new RNG at every step.
-    step = state.step
-    rngs = {name: jax.random.fold_in(rng, step) for name, rng in rngs.items()}
 
-    def loss_fn(params, eeg, labels, carry):
-        logits, carry = state.apply_fn(
+    def loss_fn(params):
+        logits, new_carry = state.apply_fn(
             params,
             eeg,
             carry
         )
+        
+        loss = jnp.mean(binary_logistic_loss(labels, logits))
+        return loss, (logits, new_carry)
 
-        loss = optax.sigmoid_binary_cross_entropy(logits, labels).mean()
-        metrics = compute_metrics(loss, labels, logits)
-        return loss, (metrics, carry)
-
-    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    value, grads = grad_fn(state.params, eeg, labels, carry)
-    metrics, carry = value[1]
+    grad_fn = jax.grad(loss_fn, has_aux=True)
+    grads, (logits, carry) = grad_fn(state.params)
 
     new_state = state.apply_gradients(grads=grads)
+    metrics = compute_metrics(labels, logits)
     return new_state, metrics, carry
 
 
 def eval_step(
-    state: TrainState, eeg: Array, labels: Array, rngs: Dict[str, Any], carry: Optional[Any] = None
+    state: TrainState, eeg: Array, labels: Array, carry: Optional[Any] = None
 ) -> Metrics:
     """Evaluate for a single step. Model should be in deterministic mode."""
     logits, _ = state.apply_fn(
@@ -90,8 +87,7 @@ def eval_step(
         eeg,
         carry
     )
-    loss = optax.sigmoid_binary_cross_entropy(logits, labels).mean()
-    metrics = compute_metrics(loss, labels=labels, logits=logits)
+    metrics = compute_metrics(labels=labels, logits=logits)
     return metrics
 
 
@@ -100,19 +96,15 @@ def evaluate_model(
     state: TrainState,
     batches,
     epoch: int,
-    rngs: Optional[Dict[str, Any]] = None,
     carry: Optional[Any] = None
 ) -> Metrics:
     """Evaluate a model on a dataset."""
     batch_metrics = []
-    for i, (eeg, labels) in enumerate(batches):
+    for eeg, labels in batches:
         eeg = jax.tree_map(lambda x: x._numpy(), eeg)
         labels = jax.tree_map(lambda x: x._numpy(), labels)
-        if rngs is not None:  # New RNG for each step.
-            rngs = {name: jax.random.fold_in(rng, i)
-                    for name, rng in rngs.items()}
 
-        metrics = eval_step_fn(state, eeg, labels, rngs, carry)
+        metrics = eval_step_fn(state, eeg, labels, carry)
         batch_metrics.append(metrics)
 
     batch_metrics = jax.device_get(batch_metrics)
@@ -128,7 +120,6 @@ def train_epoch(
     state: TrainState,
     train_batches,
     epoch: int,
-    rngs: Optional[Dict[str, Any]] = None,
     carry: Optional[Any] = None
 
 ) -> Tuple[TrainState, Metrics]:
@@ -137,7 +128,8 @@ def train_epoch(
     for eeg, labels in train_batches:
         eeg = jax.tree_map(lambda x: x._numpy(), eeg)
         labels = jax.tree_map(lambda x: x._numpy(), labels)
-        state, metrics, carry = train_step_fn(state, eeg, labels, rngs, carry)
+        state, metrics, carry = train_step_fn(state, eeg, labels, carry)
+
         batch_metrics.append(metrics)
 
     # Compute the metrics for this epoch.
@@ -154,8 +146,7 @@ def train_and_evaluate(
     train_batches,
     test_batches,
     state,
-    carry,
-    rng
+    carry
 ) -> TrainState:
     """Execute model training and evaluation loop.
 
@@ -166,7 +157,7 @@ def train_and_evaluate(
       The final train state that includes the trained parameters.
     """
     # connecting wandb
-    wandb.init(project="exp2", config=params)
+    # wandb.init(project="exp2", config=params)
 
     # Compile step functions.
     train_step_fn = jax.jit(train_step)
@@ -176,10 +167,8 @@ def train_and_evaluate(
     print('Starting training...')
     for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
         # Train for one epoch.
-        rng, epoch_rng = jax.random.split(rng)
-        rngs = {'dropout': epoch_rng}
         state, train_metrics, carry = train_epoch(
-            train_step_fn, state, train_batches, epoch, rngs, carry=carry
+            train_step_fn, state, train_batches, epoch, carry=carry
         )
 
         # Evaluate current model on the validation data.
@@ -191,6 +180,6 @@ def train_and_evaluate(
                'train_accuracy': train_metrics.accuracy * 100,
                'eval_loss': eval_metrics.loss,
                'eval_accuracy': eval_metrics.accuracy * 100}
-        wandb.log(log, epoch)
+        # wandb.log(log, epoch)
 
     return state

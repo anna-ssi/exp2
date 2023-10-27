@@ -1,12 +1,13 @@
 import scipy.io as sio
 import pandas as pd
+import numpy as np
 
 
-def read_eeg_file(path: str):
+def read_erp_file(path: str):
     """
-    Read EEG data from a .mat file
+    Read ERP data from a .mat file
         :param path: path to the file
-        :return: EEG data
+        :return: ERP data
     """
     data = sio.loadmat(path)
     if 'ERP' in data.keys():
@@ -24,3 +25,6 @@ def read_csv_file(path: str):
     """
     data = pd.read_csv(path, header=None, names=['label'])
     return data
+
+def normalize(data):
+    return (data - np.mean(data)) / np.std(data)

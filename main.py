@@ -26,6 +26,8 @@ if __name__ == '__main__':
     chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
     
     # Loading dataset
+    import numpy as np
+    
     dataset = TrainTestSplit(args.data_path, params.test_size)
     train_data, test_data = dataset.split()
     print(f'{len(train_data)} train samples, {len(test_data)} test samples')
@@ -40,7 +42,7 @@ if __name__ == '__main__':
     # Loading checkpoint
     train_state = checkpoints.restore_checkpoint(chk_path, train_state)
     train_and_evaluate(params, train_batches, test_batches,
-                       train_state, carry, rng)
+                       train_state, carry)
 
     # saving checkpoint
     checkpoints.save_checkpoint(chk_path, train_state, {'step': train_state.step}, overwrite=True)

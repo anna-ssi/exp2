@@ -44,7 +44,7 @@ class LSTM(nn.Module):
         carry, y = nn.OptimizedLSTMCell(self.hidden_size)(carry, x)
         y = flatten(y)
         logits = nn.Dense(2, kernel_init=w_init, bias_init=b_init)(y)
-        logits = nn.sigmoid(logits)
+        # logits = nn.sigmoid(logits)
         return carry, logits
 
     def initialize_carry(self, input_shape):
@@ -70,7 +70,7 @@ class CNN(nn.Module):
 
         x = flatten(x)
         logits = nn.Dense(2, kernel_init=w_init, bias_init=b_init)(x)
-        logits = nn.sigmoid(logits)
+        # logits = nn.sigmoid(logits)
         return logits, carry
 
 
@@ -90,7 +90,7 @@ class MLP(nn.Module):
             x = nn.relu(x)
 
         logits = nn.Dense(2, kernel_init=w_init, bias_init=b_init)(x)
-        logits = nn.sigmoid(logits)
+        # logits = nn.sigmoid(logits)
         return logits, carry
 
 
@@ -118,11 +118,21 @@ def build_net(inputs: Tuple, params, rng: Any):
         return layers
 
     network = _inner()
+   
 
-    sample_input = jnp.zeros((1,) + tuple(inputs))
+    sample_input = jnp.zeros(tuple(inputs))
     carry = network.initialize_carry(
         inputs) if params.network.type == 'lstm' else None
     net_params = network.init(rng, sample_input, carry)
+    # print(network.tabulate(jax.random.key(0), sample_input))
+    # exit()
 
     train_state = create_train_state(params.optim, net_params, network)
     return train_state, carry
+
+
+def generate_sample_inputs(net_type: str, input_size: list):
+    if net_type == "MLP":
+        return jnp.zeros(tuple(input_size))
+    elif net_type == 'CNN':
+        return jnp.zeros((1, ) + tuple(input_size))

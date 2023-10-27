@@ -3,49 +3,43 @@ import numpy as np
 import tensorflow as tf
 
 from src.utils.helper import get_file_names
-from src.utils.preprocess import read_eeg_file, read_csv_file
+from src.utils.preprocess import read_erp_file, read_csv_file, normalize
 
 
 class TrainTestSplit:
-    def __init__(self, data_path: str, test_size: float = 0.1, type: str = 'safe') -> None:
+    def __init__(self, data_path: str, test_size: float = 0.1, type: str = 'Safe') -> None:
         self.test_size = test_size
         self.path = data_path
         self.type = type
 
-        self.data = self.load_eeg()
-        self.labels = self.load_label()
+        self.data, self.labels = self.load()
         self.clean_data()
         self.save()
 
-    def load_eeg(self):
-        if os.path.exists(os.path.join(self.path, f'{self.type}_eeg.npy')):
-            return np.load(os.path.join(self.path, f'{self.type}_eeg.npy'))
+    def load(self):
+        if os.path.exists(os.path.join(self.path, f'{self.type}_erp.npy')) and \
+                os.path.exists(os.path.join(self.path, f'{self.type}_labels.npy')):
+            return (np.load(os.path.join(self.path, f'{self.type}_erp.npy')),
+                    np.load(os.path.join(self.path, f'{self.type}_labels.npy')))
+            
+        erps, labels = [], []
+        erp_paths = get_file_names(os.path.join(self.path, 'erp'), ext='.mat', keyword=self.type)
 
-        eegs = []
-        eeg_paths = get_file_names(os.path.join(self.path, 'eeg'), ext='.mat')
-
-        for eeg_path in eeg_paths:
-            if "ERP" not in eeg_path:
-                continue
-            eeg = read_eeg_file(eeg_path)
-            eegs.append(eeg)
-        data = np.concatenate(eegs, axis=2)
-        data = np.transpose(data, axes=(2, 0, 1))
-        return data
-
-    def load_label(self):
-        if os.path.exists(os.path.join(self.path, f'{self.type}_labels.npy')):
-            return np.load(os.path.join(self.path, f'{self.type}_labels.npy'))
-
-        labels = []
-        label_paths = get_file_names(
-            os.path.join(self.path, 'csv'), ext='.csv')
-
-        for label_path in label_paths:
-            label = read_csv_file(label_path)
+        for erp_path in erp_paths:
+            csv_path = erp_path.replace('ERP', 'Trial').replace('mat', 'csv').replace('erp', 'csv')
+            
+            erp = read_erp_file(erp_path)
+            label = read_csv_file(csv_path)
+            
+            erps.append(erp)
             labels.append(label)
-
-        return np.concatenate(labels)
+            
+        erp_data = np.concatenate(erps, axis=2)
+        erp_data = np.transpose(erp_data, axes=(2, 0, 1))
+        erp_data = normalize(erp_data)
+        
+        labels = np.concatenate(labels, axis=0)
+        return erp_data, labels
 
     def clean_data(self):
         del_idx = np.where(self.labels == -1)[0]
@@ -64,5 +58,6 @@ class TrainTestSplit:
                 tf.data.Dataset.from_tensor_slices((test_data, test_labels)))
 
     def save(self):
-        np.save(os.path.join(self.path, f'{self.type}_eeg.npy'), self.data)
-        np.save(os.path.join(self.path, f'{self.type}_labels.npy'), self.labels)
+        np.save(os.path.join(self.path, f'{self.type}_erp.npy'), self.data)
+        np.save(os.path.join(
+            self.path, f'{self.type}_labels.npy'), self.labels)
