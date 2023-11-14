@@ -26,6 +26,7 @@ def evaluate(model, data_loader, data_size):
 
     for data in data_loader:
         eeg, labels = data
+        eeg, labels = eeg.to(device), labels.to(device)
         pred = model(eeg).detach().numpy()
         pred = np.argmax(pred, axis=1)
 
@@ -51,9 +52,11 @@ if __name__ == '__main__':
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--gpu', action='store_true', default=False)
     parser.add_argument('--data', type=str, default='Safe',
-                        choices=['Safe', 'Risk', 'All']) # TODO: all
+                        choices=['Safe', 'Risk', 'All']) 
 
     args = parser.parse_args()
+    
+    device = torch.device('cuda' if args.gpu else 'cpu')
 
     params = ConfigLoader(json.load(open(args.exp, 'r')))
     chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
@@ -75,7 +78,7 @@ if __name__ == '__main__':
         test_set, batch_size=params.batch_size, shuffle=False)
 
     # Loading model
-    model = EEGNet()
+    model = EEGNet().to(device)
     if os.path.exists(save_path):
         model.load_state_dict(torch.load(save_path))
     
@@ -86,6 +89,7 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
     running_loss = 0
     for data in train_loader:
         eeg, labels = data
+        eeg, labels = eeg.to(device), labels.to(device)
         # zero the parameter gradients
         optimizer.zero_grad()
 
