@@ -18,28 +18,25 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-def evaluate(model, data_loader, data_size):
+def evaluate(model, data_loader):
     accuracy = 0
     precision = 0
     recall = 0
-    fmeasure = 0
 
     for data in data_loader:
         eeg, labels = data
-        eeg, labels = eeg.to(device), labels.to(device)
-        pred = model(eeg).detach().numpy()
-        pred = np.argmax(pred, axis=1)
+        eeg = eeg.to(device)
+        pred = model(eeg).detach().cpu().numpy()
+        pred = np.argmax(pred, axis=1).reshape(-1, 1)
 
         # metrics
         accuracy += accuracy_score(labels, pred)
         precision += precision_score(labels, pred)
         recall += recall_score(labels, pred)
-        fmeasure += (2*precision*recall / (precision+recall))
 
-    return {'acc': accuracy / data_size,
-            'recall': recall / data_size,
-            'precision': precision / data_size,
-            'fmeasure': fmeasure / data_size
+    return {'acc': (accuracy / len(data_loader)) * 100,
+            'recall': recall / len(data_loader),
+            'precision': precision / len(data_loader)
             }
 
 
@@ -57,10 +54,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     device = torch.device('cuda' if args.gpu else 'cpu')
+    print("Device: ", device)
 
     params = ConfigLoader(json.load(open(args.exp, 'r')))
     chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
     save_path = os.path.join(chk_path, f'{args.data}.pt')
+    if not os.path.exists(chk_path):
+        os.makedirs(chk_path)
 
     # Loading dataset
     dataset = EEGDataset(args.data_path, type=args.data)
@@ -85,6 +85,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=params.optim.lr)
 
+best_acc = 0
 for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
     running_loss = 0
     for data in train_loader:
@@ -104,12 +105,15 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
 
     # Validation accuracy
     params = ["acc", "auc", "fmeasure"]
-
-    print("Training Loss ", running_loss / train_size)
-    print("Train - ", evaluate(model, train_loader, train_size))
-    print("Test - ", evaluate(model, test_loader, test_size))
-
-    # Save model
-    if not os.path.exists(chk_path):
-        os.makedirs(chk_path)
-    torch.save(model.state_dict(), os.path.join(chk_path, f'{args.data}.pt'))
+    
+    print("Training Loss ", running_loss / len(train_loader))
+    print("Train - ", evaluate(model, train_loader))
+    
+    test_results = evaluate(model, test_loader)
+    print("Test - ", test_results)
+    
+    if test_results['acc'] > best_acc:
+        # Save model
+        print("Saving the model...")
+        torch.save(model.state_dict(), os.path.join(chk_path, f'{args.data}.pt'))
+        best_acc = test_results['acc']

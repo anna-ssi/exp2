@@ -53,5 +53,5 @@ class EEGNet(nn.Module):
         
         # FC Layer
         x = self.flatten(x)
-        x = F.sigmoid(self.fc1(x))
+        x = self.fc1(x)
         return x
