@@ -1,11 +1,9 @@
 import os
 import json
 import argparse
-
 import jax
-from flax.training import checkpoints
 
-from src.models.network import build_net
+from src.models.eegnet import build_net
 from src.models.train import train_and_evaluate
 from src.utils.config_loader import ConfigLoader
 from src.utils.load_dataset import TrainTestSplit
@@ -26,8 +24,6 @@ if __name__ == '__main__':
     chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
     
     # Loading dataset
-    import numpy as np
-    
     dataset = TrainTestSplit(args.data_path, params.test_size)
     train_data, test_data = dataset.split()
     print(f'{len(train_data)} train samples, {len(test_data)} test samples')
@@ -37,12 +33,12 @@ if __name__ == '__main__':
     
     eeg, _ = train_data.batch(1).as_numpy_iterator().next()
     rng = jax.random.PRNGKey(params.seed)
-    train_state, carry = build_net(eeg.shape, params, rng)
-    
-    # Loading checkpoint
-    train_state = checkpoints.restore_checkpoint(chk_path, train_state)
-    train_and_evaluate(params, train_batches, test_batches,
-                       train_state, carry)
+    train_state, network, optimizer = build_net(eeg.shape, params, rng)
+    exit()
+    # Loading checkpoint TODO
+    # train_state = checkpoints.restore_checkpoint(chk_path, train_state)
+    train_and_evaluate(network, optimizer, params, train_batches, test_batches,
+                       train_state)
 
-    # saving checkpoint
-    checkpoints.save_checkpoint(chk_path, train_state, {'step': train_state.step}, overwrite=True)
+    # saving checkpoint TODO
+    # checkpoints.save_checkpoint(chk_path, train_state, {'step': train_state.step}, overwrite=True)

@@ -4,20 +4,20 @@ import logging
 import numpy as np
 import jax
 import jax.numpy as jnp
-import jax_metrics as jm
+
+import optax
+import haiku as hk
 from flax import struct
-from flax.training import train_state
 
 from typing import Any, Dict, Tuple, Optional, Callable, Sequence
 from tqdm import tqdm
 
-from src.models.losses import binary_logistic_loss
+from src.models.losses import *
+from src.models.eegnet import TrainState
 
 Array = jnp.ndarray
-TrainState = train_state.TrainState
-
 logger = logging.getLogger("EXP2")
-accuracy = jm.metrics.Accuracy()
+
 
 class Metrics(struct.PyTreeNode):
     """Computed metrics."""
@@ -25,25 +25,24 @@ class Metrics(struct.PyTreeNode):
     accuracy: float
 
 @jax.jit
-def compute_metrics(labels: Array, logits: Array, threshold: float = 0.5) -> Metrics:
+def compute_metrics(labels: Array, logits: Array) -> Metrics:
     """Computes the metrics, summed across the batch if a batch is provided."""
-    loss = binary_logistic_loss(labels=labels, logits=logits).mean()
+    loss = optax.sigmoid_binary_cross_entropy(
+                logits, labels).mean()
     
-    binary_predictions = jax.nn.sigmoid(logits) >= threshold
-    binary_predictions = logits >= threshold
-    binary_predictions = jnp.expand_dims(binary_predictions.argmax(axis=1), axis=1)
-    binary_accuracy = jnp.sum(binary_predictions == labels)
+    predictions = jnp.argmax(logits, axis=-1)
+    binary_accuracy = jnp.mean(predictions == labels)
 
     return Metrics(
         loss=loss,
-        accuracy=binary_accuracy/len(labels)
+        accuracy=binary_accuracy
     )
 
 
 def normalize_batch_metrics(batch_metrics: Sequence[Metrics]) -> Metrics:
     """Consolidates and normalizes a list of per-batch metrics dicts."""
     # Here we sum the metrics that were already summed per batch.
-    total_loss = np.mean([metrics.loss for metrics in batch_metrics]) 
+    total_loss = np.mean([metrics.loss for metrics in batch_metrics])
     total_accuracy = np.mean(
         [metrics.accuracy for metrics in batch_metrics])
 
@@ -52,59 +51,72 @@ def normalize_batch_metrics(batch_metrics: Sequence[Metrics]) -> Metrics:
     )
 
 
-def train_step(
+def train_epoch(
+    optimizer: optax.GradientTransformation,
+    network: Any,
     state: TrainState,
-    eeg: Array,
-    labels: Array,
-    carry: Optional[Any] = None,
-) -> Tuple[TrainState, Dict]:
-    """Train for a single step."""
+    train_batches,
+    epoch: int,
+) -> Tuple[TrainState, Metrics]:
+    """Train for a single epoch."""
 
-    def loss_fn(params):
-        logits, new_carry = state.apply_fn(
-            params,
-            eeg,
-            carry
-        )
-        
-        loss = jnp.mean(binary_logistic_loss(labels, logits))
-        return loss, (logits, new_carry)
+    @jax.jit
+    def train_step(eeg: Array, labels: Array):
+        """Train for a single step."""
 
-    grad_fn = jax.grad(loss_fn, has_aux=True)
-    grads, (logits, carry) = grad_fn(state.params)
+        def loss_fn(params):
+            logits = network.apply(params, eeg)
+            # TODO: change loss function
+            loss = optax.sigmoid_binary_cross_entropy(logits, labels).mean()
+            return loss, logits
 
-    new_state = state.apply_gradients(grads=grads)
-    metrics = compute_metrics(labels, logits)
-    return new_state, metrics, carry
+        grad_fn = jax.grad(loss_fn, has_aux=True, allow_int=True)
+        grads, logits = grad_fn(state.params)
+        updates, opt_state = optimizer.update(grads, state.opt_state, state.params)
+        params = optax.apply_updates(state.params, updates)
 
+        new_state = TrainState(params=params, opt_state=opt_state)
+        metrics = compute_metrics(labels, logits)
+        return new_state, metrics
 
-def eval_step(
-    state: TrainState, eeg: Array, labels: Array, carry: Optional[Any] = None
-) -> Metrics:
-    """Evaluate for a single step. Model should be in deterministic mode."""
-    logits, _ = state.apply_fn(
-        state.params,
-        eeg,
-        carry
-    )
-    metrics = compute_metrics(labels=labels, logits=logits)
-    return metrics
+    batch_metrics = []
+    for eeg, labels in train_batches:
+        eeg = jax.tree_map(lambda x: x._numpy(), eeg)
+        labels = jax.tree_map(lambda x: x._numpy(), labels)
+        state, metrics = train_step(eeg, labels)
+
+        batch_metrics.append(metrics)
+
+    # Compute the metrics for this epoch.
+    batch_metrics = jax.device_get(batch_metrics)
+    metrics = normalize_batch_metrics(batch_metrics)
+
+    print(
+        f'Train {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
+    return state, metrics
 
 
 def evaluate_model(
-    eval_step_fn: Callable[..., Any],
+    network: Any,
     state: TrainState,
     batches,
-    epoch: int,
-    carry: Optional[Any] = None
+    epoch: int
 ) -> Metrics:
     """Evaluate a model on a dataset."""
+
+    def eval_step(eeg: Array, labels: Array
+                  ) -> Metrics:
+        """Evaluate for a single step. Model should be in deterministic mode."""
+        logits = network.apply(state.params, eeg)
+        metrics = compute_metrics(labels=labels, logits=logits)
+        return metrics
+
     batch_metrics = []
     for eeg, labels in batches:
         eeg = jax.tree_map(lambda x: x._numpy(), eeg)
         labels = jax.tree_map(lambda x: x._numpy(), labels)
-
-        metrics = eval_step_fn(state, eeg, labels, carry)
+        
+        metrics = eval_step(eeg, labels)
         batch_metrics.append(metrics)
 
     batch_metrics = jax.device_get(batch_metrics)
@@ -115,39 +127,14 @@ def evaluate_model(
     return metrics
 
 
-def train_epoch(
-    train_step_fn: Callable[..., Tuple[TrainState, Metrics]],
-    state: TrainState,
-    train_batches,
-    epoch: int,
-    carry: Optional[Any] = None
-
-) -> Tuple[TrainState, Metrics]:
-    """Train for a single epoch."""
-    batch_metrics = []
-    for eeg, labels in train_batches:
-        eeg = jax.tree_map(lambda x: x._numpy(), eeg)
-        labels = jax.tree_map(lambda x: x._numpy(), labels)
-        state, metrics, carry = train_step_fn(state, eeg, labels, carry)
-
-        batch_metrics.append(metrics)
-
-    # Compute the metrics for this epoch.
-    batch_metrics = jax.device_get(batch_metrics)
-    metrics = normalize_batch_metrics(batch_metrics)
-
-    print(
-        f'Train {epoch}: loss {metrics.loss:.4f} accuracy {(metrics.accuracy * 100):.2f}')
-    return state, metrics, carry
-
-
 def train_and_evaluate(
+    network,
+    optimizer,
     params,
     train_batches,
     test_batches,
-    state,
-    carry
-) -> TrainState:
+    state
+    ) -> TrainState:
     """Execute model training and evaluation loop.
 
     Args:
@@ -159,21 +146,17 @@ def train_and_evaluate(
     # connecting wandb
     # wandb.init(project="exp2", config=params)
 
-    # Compile step functions.
-    train_step_fn = jax.jit(train_step)
-    eval_step_fn = jax.jit(eval_step)
-
     # Main training loop.
     print('Starting training...')
     for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
         # Train for one epoch.
-        state, train_metrics, carry = train_epoch(
-            train_step_fn, state, train_batches, epoch, carry=carry
+        state, train_metrics = train_epoch(
+            optimizer, network, state, train_batches, epoch
         )
 
         # Evaluate current model on the validation data.
         eval_metrics = evaluate_model(
-            eval_step_fn, state, test_batches, epoch, carry=carry)
+            network, state, test_batches, epoch)
 
         # Write metrics to TensorBoard.
         log = {'train_loss': train_metrics.loss,
