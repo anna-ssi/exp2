@@ -3,13 +3,6 @@ from dataclasses import dataclass
 
 
 @dataclass
-class NetworkConfig:
-    type: str
-    size: int
-    hidden: int
-
-
-@dataclass
 class OptimConfig:
     type: str
     lr: float
@@ -25,12 +18,7 @@ class ConfigLoader:
         self.epochs = config['epochs']
         self.test_size = config['test_size']
 
-        self.network = NetworkConfig(**config['network'])
         self.optim = OptimConfig(**config['optim'])
-
-    @staticmethod
-    def load_network_config(config):
-        return NetworkConfig(**config)
 
     @staticmethod
     def load_optim_config(config):

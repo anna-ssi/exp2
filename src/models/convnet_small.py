@@ -1,9 +1,9 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-class EEGNet(nn.Module):
+class ConvNetSmall(nn.Module):
     def __init__(self):
-        super(EEGNet, self).__init__()
+        super(ConvNetSmall, self).__init__()
         self.T = 120
         
         self.flatten = nn.Flatten()
