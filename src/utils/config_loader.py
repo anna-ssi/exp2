@@ -17,6 +17,7 @@ class ConfigLoader:
         self.batch_size = config['batch_size']
         self.epochs = config['epochs']
         self.test_size = config['test_size']
+        self.net_type = config['net']
 
         self.optim = OptimConfig(**config['optim'])
 

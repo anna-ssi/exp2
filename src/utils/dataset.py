@@ -9,24 +9,35 @@ from src.utils.preprocess import read_erp_file, read_csv_file, normalize
 
 
 class EEGDataset(Dataset):
-    def __init__(self, data_path: str, type: str = 'Safe', balanced: bool = False) -> None:
+    def __init__(self, data_path: str, type: str = 'Safe', balanced: bool = False, net_type: str = 'eeg') -> None:
         self.path = data_path
-        self.type = type if type in ['Safe', 'Risk'] else None
+        self.type = type
         self.balanced = balanced
+        self.net_type = net_type
 
         self.erp_path, self.label_path = self.get_paths()
         self.data, self.labels = self.load()
-        self.clean_data()
-        if self.balanced:
-            self.balance()
-        self.save()
+        
+        self.shuffle()
+        # self.clean_data()
+        
+        # if self.balanced:
+        #     self.balance()
+        # self.save()
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return torch.Tensor(self.data[idx]).unsqueeze(0), torch.LongTensor(self.labels[idx])
-        # return torch.Tensor(self.data[idx]), torch.LongTensor(self.labels[idx])
+        if self.net_type == 'eeg':
+            return torch.Tensor(self.data[idx]).unsqueeze(0), torch.LongTensor(self.labels[idx])
+        else:
+            return torch.Tensor(self.data[idx]), torch.LongTensor(self.labels[idx])
+        
+    def get_data_stats(self):
+        counts = np.unique(self.labels, return_counts=True)
+        print(f'Label {counts[0][0]}: {counts[1][0]/ len(self.labels) * 100:.2f}%')
+        print(f'Label {counts[0][1]}: {counts[1][1]/ len(self.labels) * 100:.2f}%')
 
     def load(self):
         if os.path.exists(self.erp_path) and os.path.exists(self.label_path):
@@ -87,3 +98,10 @@ class EEGDataset(Dataset):
             eeg_path = eeg_path.replace('.npy', '_balanced.npy')
             label_path = label_path.replace('.npy', '_balanced.npy')
         return eeg_path, label_path
+
+    def shuffle(self):
+        idx = np.arange(len(self.labels))
+        np.random.shuffle(idx)
+
+        self.data = self.data[idx]
+        self.labels = self.labels[idx]

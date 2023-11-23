@@ -9,9 +9,11 @@ from torch.utils.data import DataLoader, random_split
 
 from tqdm import tqdm
 from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.model_selection import KFold
 
 from src.utils.config_loader import ConfigLoader
 from src.utils.dataset import EEGDataset
+from src.utils.helper import *
 
 from torcheeg.models import EEGNet, LSTM
 
@@ -52,25 +54,38 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', type=str, default='./data/')
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--gpu', action='store_true', default=False)
+    parser.add_argument('--balance', action='store_true', default=False)
     parser.add_argument('--data', type=str, default='Safe',
-                        choices=['Safe', 'Risk', 'All']) 
+                        choices=['Safe', 'Risk', 'All'])
 
     args = parser.parse_args()
-    
+
     device = torch.device('cuda' if args.gpu else 'cpu')
     print("Device: ", device)
 
     params = ConfigLoader(json.load(open(args.exp, 'r')))
-    chk_path = os.path.join(args.checkpoint_path, f'{params.seed}')
-    save_path = os.path.join(chk_path, f'{args.data}.pt')
+    chk_path = os.path.join(args.checkpoint_path,
+                            f'{params.seed}', f'{params.net_type}', f'{args.data}')
+
+    model_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.pt')
+    results_data_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.txt')
+    print(results_data_save_path)
+
     if not os.path.exists(chk_path):
         os.makedirs(chk_path)
+    results_file = open(results_data_save_path, 'w')
 
     # Loading dataset
-    dataset = EEGDataset(args.data_path, type=args.data, balanced=True)
+    dataset = EEGDataset(args.data_path, type=args.data,
+                         balanced=args.balance, net_type=params.net_type)
     train_size = int(len(dataset) * (1 - params.test_size))
     test_size = len(dataset) - train_size
     train_set, test_set = random_split(dataset, [train_size, test_size])
+    
+
+    dataset.get_data_stats()
+    print(f'Train: {get_data_stats(train_set)}')
+    print(f'Test: {get_data_stats(test_set)}')
 
     print("Dataset length: ", len(dataset))
     print("Train length: ", len(train_set))
@@ -82,21 +97,26 @@ if __name__ == '__main__':
         test_set, batch_size=params.batch_size, shuffle=False)
 
     # Loading model
-    model = EEGNet(chunk_size=601, num_electrodes=61, num_classes=2).to(device)
-    # model = LSTM(num_electrodes=61, num_classes=2).to(device)
-    if os.path.exists(save_path):
-        model.load_state_dict(torch.load(save_path))
-    
+    if params.net_type == 'eeg':
+        model = EEGNet(chunk_size=601, num_electrodes=61,
+                       num_classes=2).to(device)
+    else:
+        model = LSTM(num_electrodes=61, num_classes=2).to(device)
+
+    if os.path.exists(model_save_path):
+        model.load_state_dict(torch.load(model_save_path))
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=params.optim.lr)
 
 best_acc = 0
+best_results = None
 for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
     running_loss = 0
     for data in train_loader:
         eeg, labels = data
         eeg, labels = eeg.to(device), labels.to(device)
-        
+
         optimizer.zero_grad()
 
         outputs = model(eeg)
@@ -109,15 +129,23 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
 
     # Validation accuracy
     params = ["acc", "auc", "fmeasure"]
-    
-    print("Training Loss ", running_loss / len(train_loader))
-    print("Train - ", evaluate(model, train_loader))
-    
+    train_results = evaluate(model, train_loader)
     test_results = evaluate(model, test_loader)
+
+    print("Training Loss ", running_loss / len(train_loader))
+    print("Train - ", train_results)
     print("Test - ", test_results)
-    
+
     if test_results['acc'] > best_acc:
         # Save model
         print("Saving the model...")
-        torch.save(model.state_dict(), os.path.join(chk_path, f'{args.data}.pt'))
+        torch.save(model.state_dict(), model_save_path)
         best_acc = test_results['acc']
+        best_results = test_results
+
+    # Save results
+    results_file.write(
+        f"Epoch: {epoch}\nTrain: {dict_to_string(train_results)}\nTest: {dict_to_string(test_results)}\n\n")
+
+print("Best Test Accuracy: ", best_acc)
+print("Best Results: ", best_results)
