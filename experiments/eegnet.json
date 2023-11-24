@@ -3,7 +3,7 @@
     "batch_size": 64,
     "epochs": 100,
     "test_size": 0.1,
-    "net": "lstm",
+    "net": "dcgnn",
     "optim": {
         "type": "adam",
         "lr": 1e-3

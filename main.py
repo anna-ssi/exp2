@@ -15,7 +15,7 @@ from src.utils.config_loader import ConfigLoader
 from src.utils.dataset import EEGDataset
 from src.utils.helper import *
 
-from torcheeg.models import EEGNet, LSTM
+from torcheeg.models import EEGNet, LSTM, DGCNN
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -100,8 +100,10 @@ if __name__ == '__main__':
     if params.net_type == 'eeg':
         model = EEGNet(chunk_size=601, num_electrodes=61,
                        num_classes=2).to(device)
-    else:
+    elif params.net_type == 'lstm':
         model = LSTM(num_electrodes=61, num_classes=2).to(device)
+    else:
+        model = DGCNN(in_channels=601, num_electrodes=61, num_classes=2).to(device)
 
     if os.path.exists(model_save_path):
         model.load_state_dict(torch.load(model_save_path))
