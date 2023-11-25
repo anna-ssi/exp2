@@ -9,10 +9,9 @@ from torch.utils.data import DataLoader, random_split
 
 from tqdm import tqdm
 from sklearn.metrics import precision_score, recall_score, accuracy_score
-from sklearn.model_selection import KFold
 
 from src.utils.config_loader import ConfigLoader
-from src.utils.dataset import EEGDataset
+from src.utils.dataset import EEGDatasetExp2
 from src.utils.helper import *
 
 from torcheeg.models import EEGNet, LSTM, DGCNN
@@ -68,28 +67,20 @@ if __name__ == '__main__':
                             f'{params.seed}', f'{params.net_type}', f'{args.data}')
 
     model_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.pt')
-    results_data_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.txt')
-    print(results_data_save_path)
+    results_data_save_path = os.path.join(
+        chk_path, f'{args.data}_{args.balance}.txt')
 
     if not os.path.exists(chk_path):
         os.makedirs(chk_path)
     results_file = open(results_data_save_path, 'w')
 
     # Loading dataset
-    dataset = EEGDataset(args.data_path, type=args.data,
-                         balanced=args.balance, net_type=params.net_type)
-    train_size = int(len(dataset) * (1 - params.test_size))
-    test_size = len(dataset) - train_size
-    train_set, test_set = random_split(dataset, [train_size, test_size])
-    
-
-    dataset.get_data_stats()
-    print(f'Train: {get_data_stats(train_set)}')
-    print(f'Test: {get_data_stats(test_set)}')
-
-    print("Dataset length: ", len(dataset))
-    print("Train length: ", len(train_set))
-    print("Test length: ", len(test_set))
+    train_set = EEGDatasetExp2(args.data_path, train=True,
+                               type=args.data, net_type=params.net_type)
+    test_set = EEGDatasetExp2(args.data_path, train=False,
+                              type=args.data, net_type=params.net_type)
+    train_set.get_data_stats()
+    test_set.get_data_stats()
 
     train_loader = DataLoader(
         train_set, batch_size=params.batch_size, shuffle=True)
@@ -103,7 +94,8 @@ if __name__ == '__main__':
     elif params.net_type == 'lstm':
         model = LSTM(num_electrodes=61, num_classes=2).to(device)
     else:
-        model = DGCNN(in_channels=601, num_electrodes=61, num_classes=2).to(device)
+        model = DGCNN(in_channels=601, num_electrodes=61,
+                      num_classes=2).to(device)
 
     if os.path.exists(model_save_path):
         model.load_state_dict(torch.load(model_save_path))

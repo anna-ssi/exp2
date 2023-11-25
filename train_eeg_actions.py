@@ -30,13 +30,15 @@ def evaluate(model, data_loader):
     for data in data_loader:
         eeg, labels = data
         eeg = eeg.to(device)
+
         pred = model(eeg).detach().cpu().numpy()
-        pred = np.argmax(pred, axis=1).reshape(-1, 1)
+        pred = np.argmax(pred, axis=1)
+        labels = labels.numpy().squeeze()
 
         # metrics
         accuracy += accuracy_score(labels, pred)
-        precision += precision_score(labels, pred)
-        recall += recall_score(labels, pred)
+        precision += precision_score(labels, pred, average='macro')
+        recall += recall_score(labels, pred, average='macro')
         f_score += 2 * (precision * recall) / (precision + recall)
 
     return {'acc': (accuracy / len(data_loader)) * 100,
@@ -68,33 +70,22 @@ if __name__ == '__main__':
                             f'{params.seed}', f'{params.net_type}', f'{args.data}')
 
     model_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.pt')
-    results_data_save_path = os.path.join(chk_path, f'{args.data}_{args.balance}.txt')
-    print(results_data_save_path)
+    results_data_save_path = os.path.join(
+        chk_path, f'{args.data}_{args.balance}.txt')
 
     if not os.path.exists(chk_path):
         os.makedirs(chk_path)
     results_file = open(results_data_save_path, 'w')
 
     # Loading dataset
-    train_dataset = EEGDatasetAction(args.data_path, train=True, 
-                                     type=args.data, net_type=params.net_type)
-    test_dataset = EEGDatasetAction(args.data_path, train=False, 
-                                     type=args.data, net_type=params.net_type)
-    print("Train dataset length: ", len(train_dataset))
-    print("Test dataset length: ", len(test_dataset))
-    exit()
-    train_size = int(len(dataset) * (1 - params.test_size))
-    test_size = len(dataset) - train_size
-    train_set, test_set = random_split(dataset, [train_size, test_size])
-    
-
-    dataset.get_data_stats()
-    print(f'Train: {get_data_stats(train_set)}')
-    print(f'Test: {get_data_stats(test_set)}')
-
-    print("Dataset length: ", len(dataset))
-    print("Train length: ", len(train_set))
-    print("Test length: ", len(test_set))
+    train_set = EEGDatasetAction(args.data_path, train=True,
+                                 type=args.data, net_type=params.net_type,
+                                 balance=args.balance)
+    test_set = EEGDatasetAction(args.data_path, train=False,
+                                type=args.data, net_type=params.net_type,
+                                balance=args.balance)
+    train_set.get_data_stats()
+    test_set.get_data_stats()
 
     train_loader = DataLoader(
         train_set, batch_size=params.batch_size, shuffle=True)
@@ -104,11 +95,12 @@ if __name__ == '__main__':
     # Loading model
     if params.net_type == 'eeg':
         model = EEGNet(chunk_size=601, num_electrodes=61,
-                       num_classes=2).to(device)
+                       num_classes=4).to(device)
     elif params.net_type == 'lstm':
-        model = LSTM(num_electrodes=61, num_classes=2).to(device)
+        model = LSTM(num_electrodes=61, num_classes=4).to(device)
     else:
-        model = DGCNN(in_channels=601, num_electrodes=61, num_classes=2).to(device)
+        model = DGCNN(in_channels=601, num_electrodes=61,
+                      num_classes=4).to(device)
 
     if os.path.exists(model_save_path):
         model.load_state_dict(torch.load(model_save_path))
@@ -127,7 +119,7 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
         optimizer.zero_grad()
 
         outputs = model(eeg)
-        loss = criterion(outputs, labels.squeeze(1))
+        loss = criterion(outputs, labels.squeeze())
 
         loss.backward()
         optimizer.step()
