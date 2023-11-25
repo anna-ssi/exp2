@@ -17,14 +17,26 @@ def read_erp_file(path: str):
     return data
 
 
-def read_csv_file(path: str):
+def read_csv_file(path: str, header=None, names=['label']):
     """
     Read CSV data from a .csv file
         :param path: path to the file
         :return: CSV data
     """
-    data = pd.read_csv(path, header=None, names=['label'])
+    data = pd.read_csv(path, header=header, names=names)
     return data
+
+def read_behavior_data(path: str):
+    """
+    Read behavior data from a .mat file
+        :param path: path to the file
+        :return: behavior data
+    """
+    df = read_csv_file(path, header=0, names=None)
+    df = df.sort_values(by=["BlockNum", "Trial"], ascending=True)
+    df = df[df.ForcedChoice == 0]
+    
+    return df
 
 
 def normalize(data):

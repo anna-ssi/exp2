@@ -3,6 +3,8 @@ from os.path import isfile, join
 from typing import List
 from collections import defaultdict
 
+import numpy as np
+
 
 def get_file_names(path: str, ext: str, keyword: str = None) -> List[str]:
     """
@@ -14,7 +16,7 @@ def get_file_names(path: str, ext: str, keyword: str = None) -> List[str]:
     paths = []
     for f in listdir(path):
         if isfile(join(path, f)) and f.endswith(ext):
-            if keyword not in f and keyword != 'All':
+            if keyword is not None and keyword not in f:
                 continue
             paths.append(join(path, f))
     return paths
@@ -48,6 +50,8 @@ def combine_datasets():
     np.save('./data/All_erp_balanced.npy', all_erp)
     np.save('./data/All_label_balanced.npy', all_labels)    
     
+def one_hot(a, num_classes):
+    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
 
 if __name__ == '__main__':
     combine_datasets()
