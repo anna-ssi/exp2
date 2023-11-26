@@ -1,6 +1,6 @@
 {
     "seed": 0,
-    "batch_size": 128,
+    "batch_size": 1,
     "epochs": 50,
     "net": "lstm",
     "optim": {

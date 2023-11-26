@@ -5,23 +5,21 @@ import argparse
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, random_split
 
 from tqdm import tqdm
 from sklearn.metrics import precision_score, recall_score, accuracy_score
-from sklearn.model_selection import KFold
 
+from src.models.lstm import LSTM
 from src.utils.config_loader import ConfigLoader
-from src.utils.dataset import EEGDatasetAction
+from src.utils.dataset import EEGDatasetActionTrajectory
 from src.utils.helper import *
 
-from torcheeg.models import EEGNet, LSTM, DGCNN, VanillaTransformer
 
 import warnings
 warnings.filterwarnings('ignore')
 
 
-def evaluate(model, data_loader):
+def evaluate(model, batch_size, dataset):
     accuracy = 0
     precision = 0
     recall = 0
@@ -29,20 +27,30 @@ def evaluate(model, data_loader):
 
     predictions = []
 
-    for data in data_loader:
-        eeg, labels = data
-        eeg = eeg.to(device)
+    with torch.no_grad():
+        for eegs, labels in zip(dataset.data, dataset.labels):
+            h_n = torch.zeros(2, batch_size, model.hid_channels).to(device)
+            c_n = torch.zeros(2, batch_size, model.hid_channels).to(device)
 
-        pred = model(eeg).detach().cpu().numpy()
-        pred = np.argmax(pred, axis=1)
-        predictions.append(pred)
-        labels = labels.numpy().squeeze()
+            traj_preds, traj_labels = [], []
+            for i in range(len(labels)):
+                eeg, label = eegs[:, :, i], labels[i]
+                eeg = torch.Tensor(eeg).unsqueeze(0)
+                eeg = eeg.to(device)
 
-        # metrics
-        accuracy += accuracy_score(labels, pred)
-        precision += precision_score(labels, pred, average='macro')
-        recall += recall_score(labels, pred, average='macro')
-        f_score += 2 * (precision * recall) / (precision + recall)
+                pred, h_n, c_n = model(eeg, h_n, c_n)
+                pred = pred.cpu().numpy()
+                pred = np.argmax(pred, axis=1)
+                predictions.append(pred)
+                
+                traj_preds.append(pred)
+                traj_labels.append(label)
+
+            # metrics
+            accuracy += accuracy_score(traj_labels, traj_preds)
+            precision += precision_score(traj_labels, traj_preds, average='macro')
+            recall += recall_score(traj_labels, traj_preds, average='macro')
+            f_score += 2 * (precision * recall) / (precision + recall)
 
     predictions = np.concatenate(predictions, axis=0)
     counts = np.unique(predictions, return_counts=True)
@@ -51,10 +59,12 @@ def evaluate(model, data_loader):
         counts_str += f'label {label}: {count}, '
     print(counts_str[:-2])
 
-    return {'acc': (accuracy / len(data_loader)) * 100,
-            'recall': recall / len(data_loader),
-            'precision': precision / len(data_loader),
-            'fmeasure': f_score / len(data_loader)
+    dataset_len = sum([len(label) for label in dataset.labels])
+
+    return {'acc': (accuracy / dataset_len) * 100,
+            'recall': recall / dataset_len,
+            'precision': precision / dataset_len,
+            'fmeasure': f_score / dataset_len
             }
 
 
@@ -91,32 +101,14 @@ if __name__ == '__main__':
     np.random.seed(params.seed)
 
     # Loading dataset
-    train_set = EEGDatasetAction(args.data_path, train=True,
-                                 type=args.data, net_type=params.net_type,
-                                 balance=args.balance)
-    test_set = EEGDatasetAction(args.data_path, train=False,
-                                type=args.data, net_type=params.net_type,
-                                balance=args.balance)
-    train_set.get_data_stats()
-    test_set.get_data_stats()
+    train_set = EEGDatasetActionTrajectory(args.data_path, train=True,
+                                           type=args.data, net_type=params.net_type,
+                                           balance=args.balance)
+    test_set = EEGDatasetActionTrajectory(args.data_path, train=False,
+                                          type=args.data, net_type=params.net_type,
+                                          balance=args.balance)
 
-    train_loader = DataLoader(
-        train_set, batch_size=params.batch_size, shuffle=True)
-    test_loader = DataLoader(
-        test_set, batch_size=params.batch_size, shuffle=False)
-
-    # Loading model
-    if params.net_type == 'eeg':
-        model = EEGNet(chunk_size=601, num_electrodes=61,
-                       num_classes=4).to(device)
-    elif params.net_type == 'lstm':
-        model = LSTM(num_electrodes=61, num_classes=4).to(device)
-    elif params.net_type == 'dgcnn':
-        model = DGCNN(in_channels=601, num_electrodes=61,
-                      num_classes=4).to(device)
-    else:
-        model = VanillaTransformer(num_electrodes=61, chunk_size=601,
-                                   t_patch_size=601, num_classes=4).to(device)
+    model = LSTM(num_electrodes=61, num_classes=4).to(device)
 
     if os.path.exists(model_save_path):
         model.load_state_dict(torch.load(model_save_path))
@@ -126,28 +118,34 @@ if __name__ == '__main__':
 
 best_acc = 0
 best_results = None
+train_len = sum([len(label) for label in train_set.labels])
 for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
     running_loss = 0
-    for data in train_loader:
-        eeg, labels = data
-        eeg, labels = eeg.to(device), labels.to(device)
+    for eegs, labels in zip(train_set.data, train_set.labels):
+        h_n = torch.zeros(2, params.batch_size, model.hid_channels).to(device)
+        c_n = torch.zeros(2, params.batch_size, model.hid_channels).to(device)
 
-        optimizer.zero_grad()
+        for i in range(len(labels)):
+            eeg, label = eegs[:, :, i], labels[i]
+            eeg, label = torch.Tensor(eeg).unsqueeze(
+                0), torch.LongTensor([label])
+            eeg, label = eeg.to(device), label.to(device)
 
-        outputs = model(eeg)
-        loss = criterion(outputs, labels.squeeze())
+            optimizer.zero_grad()
 
-        loss.backward()
-        optimizer.step()
+            output, h_n, c_n = model(eeg, h_n, c_n)
+            loss = criterion(output, label)
 
-        running_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
 
     # Validation accuracy
-    params = ["acc", "auc", "fmeasure"]
-    train_results = evaluate(model, train_loader)
-    test_results = evaluate(model, test_loader)
+    train_results = evaluate(model, params.batch_size, train_set)
+    test_results = evaluate(model, params.batch_size, test_set)
 
-    print("Training Loss ", running_loss / len(train_loader))
+    print("Training Loss ", running_loss / train_len)
     print("Train - ", train_results)
     print("Test - ", test_results)
 

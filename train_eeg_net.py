@@ -26,17 +26,28 @@ def evaluate(model, data_loader):
     recall = 0
     f_score = 0
 
+    predictions = []
     for data in data_loader:
         eeg, labels = data
         eeg = eeg.to(device)
         pred = model(eeg).detach().cpu().numpy()
         pred = np.argmax(pred, axis=1).reshape(-1, 1)
+        labels = np.argmax(labels.numpy(), axis=1).reshape(-1, 1)
 
         # metrics
         accuracy += accuracy_score(labels, pred)
         precision += precision_score(labels, pred)
         recall += recall_score(labels, pred)
         f_score += 2 * (precision * recall) / (precision + recall)
+        predictions.append(pred)
+        
+        
+    predictions = np.concatenate(predictions, axis=0)
+    counts = np.unique(predictions, return_counts=True)
+    counts_str = f'Data stats: '
+    for label, count in zip(*counts):
+        counts_str += f'label {label}: {count}, '
+    print(counts_str[:-2])
 
     return {'acc': (accuracy / len(data_loader)) * 100,
             'recall': recall / len(data_loader),
@@ -49,13 +60,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--exp', type=str, required=True)
     parser.add_argument('--checkpoint_path', type=str,
-                        default='./checkpoints/')
+                        default='./checkpoints/exp2')
     parser.add_argument('--data_path', type=str, default='./data/')
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--gpu', action='store_true', default=False)
     parser.add_argument('--balance', action='store_true', default=False)
     parser.add_argument('--data', type=str, default='Safe',
-                        choices=['Safe', 'Risk', 'All'])
+                        choices=['Safe', 'Risk'])
 
     args = parser.parse_args()
 
@@ -74,11 +85,14 @@ if __name__ == '__main__':
         os.makedirs(chk_path)
     results_file = open(results_data_save_path, 'w')
 
+    torch.manual_seed(params.seed)
+    np.random.seed(params.seed)
+    
     # Loading dataset
     train_set = EEGDatasetExp2(args.data_path, train=True,
-                               type=args.data, net_type=params.net_type)
+                               type=args.data, net_type=params.net_type, balance=args.balance)
     test_set = EEGDatasetExp2(args.data_path, train=False,
-                              type=args.data, net_type=params.net_type)
+                              type=args.data, net_type=params.net_type, balance=args.balance)
     train_set.get_data_stats()
     test_set.get_data_stats()
 
@@ -100,10 +114,10 @@ if __name__ == '__main__':
     if os.path.exists(model_save_path):
         model.load_state_dict(torch.load(model_save_path))
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=params.optim.lr)
 
-best_acc = 0
+best_prec = 0
 best_results = None
 for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs: '):
     running_loss = 0
@@ -114,7 +128,7 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
         optimizer.zero_grad()
 
         outputs = model(eeg)
-        loss = criterion(outputs, labels.squeeze(1))
+        loss = criterion(outputs, labels)
 
         loss.backward()
         optimizer.step()
@@ -130,16 +144,16 @@ for epoch in tqdm(range(1, params.epochs + 1), total=params.epochs, desc='Epochs
     print("Train - ", train_results)
     print("Test - ", test_results)
 
-    if test_results['acc'] > best_acc:
+    if test_results['precision'] > best_prec:
         # Save model
         print("Saving the model...")
         torch.save(model.state_dict(), model_save_path)
-        best_acc = test_results['acc']
+        best_prec = test_results['precision']
         best_results = test_results
 
     # Save results
     results_file.write(
         f"Epoch: {epoch}\nTrain: {dict_to_string(train_results)}\nTest: {dict_to_string(test_results)}\n\n")
 
-print("Best Test Accuracy: ", best_acc)
+print("Best Precision: ", best_prec)
 print("Best Results: ", best_results)
