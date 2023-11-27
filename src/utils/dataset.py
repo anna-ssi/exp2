@@ -84,8 +84,8 @@ class EEGDatasetExp2(EEGDataset):
         self.clean_data()
 
         if train:
-            # if self.balanced:
-            #     self.balance()
+            if self.balanced:
+                self.balance()
             self.shuffle()
 
     def __getitem__(self, idx):
@@ -154,8 +154,8 @@ class EEGDatasetAction(EEGDataset):
         self.num_classes = 4
 
         if train:
-            #     if self.balanced:
-            #         self.balance()
+            if self.balanced:
+                self.balance()
             self.shuffle()
 
     def load(self):
@@ -219,8 +219,8 @@ class EEGDatasetAction(EEGDataset):
 
 
 class EEGDatasetActionTrajectory(EEGDataset):
-    def __init__(self, data_path: str, train: bool, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
-        super().__init__(data_path, train, type, net_type, balance)
+    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'lstm', balance: bool = False) -> None:
+        super().__init__(data_path, train, par_numbers, type, net_type, balance)
         self.erp_path, self.label_path = self.get_paths()
         self.data, self.labels = self.load()
         self.num_classes = 4
@@ -232,10 +232,9 @@ class EEGDatasetActionTrajectory(EEGDataset):
         if os.path.exists(self.erp_path) and os.path.exists(self.label_path):
             return (pickle.load(open(self.erp_path, 'rb')), pickle.load(open(self.label_path, 'rb')))
 
-        par_numbers = TRAIN_PARTICIPANT_NUMBERS if self.train else TEST_PARTICIPANT_NUMBERS
         erps, labels = [], []
 
-        for number in par_numbers:
+        for number in self.par_numbers:
             number = str(number).zfill(3)
             erp_path = os.path.join(
                 self.path, 'erp', f'{self.type}_1B_ERP_{number}.mat')
