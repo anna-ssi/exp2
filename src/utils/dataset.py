@@ -111,6 +111,7 @@ class EEGDatasetExp2(EEGDataset):
             erp = read_erp_file(erp_path)
             label = read_csv_file(csv_path)
 
+            erp = normalize(erp)
             erps.append(erp)
             labels.append(label)
 

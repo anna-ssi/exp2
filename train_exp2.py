@@ -12,7 +12,7 @@ from sklearn.metrics import precision_score, recall_score, accuracy_score
 from src.utils.dataset import EEGDatasetExp2
 from src.utils.helper import *
 
-from torcheeg.models import EEGNet, LSTM, DGCNN
+from torcheeg.models import EEGNet, LSTM, DGCNN, VanillaTransformer
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -38,7 +38,7 @@ def evaluate(model, data_loader):
             precision += precision_score(labels, pred)
             recall += recall_score(labels, pred)
             f_score += 2 * (precision * recall) / (precision + recall)
-            
+
             predictions.append(pred)
 
     predictions = np.concatenate(predictions, axis=0)
@@ -56,8 +56,7 @@ def evaluate(model, data_loader):
 
 
 if __name__ == '__main__':
-    
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path', type=str,
                         default='./checkpoints/exp2/')
@@ -70,7 +69,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--net_type', type=str, default='eeg',
-                        choices=['eeg', 'lstm', 'dgcnn', 'vit'])
+                        choices=['eeg', 'lstm', 'dcgnn', 'vit'])
     parser.add_argument('--data', type=str, default='Safe',
                         choices=['Safe', 'Risk', 'All'])
 
@@ -122,9 +121,12 @@ if __name__ == '__main__':
                            num_classes=2).to(device)
         elif args.net_type == 'lstm':
             model = LSTM(num_electrodes=61, num_classes=2).to(device)
-        else:
+        elif args.net_type == 'dcgnn':
             model = DGCNN(in_channels=601, num_electrodes=61,
                           num_classes=2).to(device)
+        else:
+            model = VanillaTransformer(num_electrodes=61, chunk_size=601,
+                                       t_patch_size=601, num_classes=2).to(device)
 
         if os.path.exists(model_save_path):
             model.load_state_dict(torch.load(model_save_path))

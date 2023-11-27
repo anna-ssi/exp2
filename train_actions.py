@@ -68,7 +68,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--net_type', type=str, default='eeg',
-                        choices=['eeg', 'lstm', 'dgcnn', 'vit'])
+                        choices=['eeg', 'lstm', 'dcgnn', 'vit'])
     parser.add_argument('--data', type=str, default='Safe',
                         choices=['Safe', 'Risk', 'All'])
 
@@ -121,7 +121,7 @@ if __name__ == '__main__':
                            num_classes=4).to(device)
         elif args.net_type == 'lstm':
             model = LSTM(num_electrodes=61, num_classes=4).to(device)
-        elif args.net_type == 'dgcnn':
+        elif args.net_type == 'dcgnn':
             model = DGCNN(in_channels=601, num_electrodes=61,
                           num_classes=4).to(device)
         else:
