@@ -10,5 +10,9 @@
 module load python/3.10.2
 source ./venv/bin/activate
 
-python train_exp2.py --gpu --net_type="eeg"
+declare -a arr=("eeg" "lstm" "dcgnn" "vit")
+for i in "${arr[@]}"
+do
+   python train_exp2.py --gpu --net_type=$i
+done
 
