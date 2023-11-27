@@ -3,6 +3,7 @@
     "batch_size": 1,
     "epochs": 50,
     "net": "lstm",
+    "kfold": 5,
     "optim": {
         "type": "adam",
         "lr": 1e-4

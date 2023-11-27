@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 
-from src.utils.helper import get_file_names, one_hot
+from src.utils.helper import one_hot
 from src.utils.preprocess import *
 
 
@@ -16,12 +16,13 @@ TRAIN_PARTICIPANT_NUMBERS = np.setdiff1d(
 
 
 class EEGDataset(Dataset):
-    def __init__(self, data_path: str, train: bool, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
+    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
         self.path = data_path
         self.type = type
         self.net_type = net_type
         self.train = train
         self.balanced = balance
+        self.par_numbers = par_numbers
 
     def __len__(self):
         return len(self.labels)
@@ -73,8 +74,8 @@ class EEGDataset(Dataset):
 
 
 class EEGDatasetExp2(EEGDataset):
-    def __init__(self, data_path: str, train: bool, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
-        super().__init__(data_path, train, type, net_type, balance)
+    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
+        super().__init__(data_path, train, par_numbers, type, net_type, balance)
 
         self.erp_path, self.label_path = self.get_paths(folder_name='exp2')
         self.data, self.labels = self.load()
@@ -83,12 +84,9 @@ class EEGDatasetExp2(EEGDataset):
         self.clean_data()
 
         if train:
-            if self.balanced:
-                self.balance()
+            # if self.balanced:
+            #     self.balance()
             self.shuffle()
-
-        if not (os.path.exists(self.erp_path) or os.path.exists(self.label_path)):
-            self.save()
 
     def __getitem__(self, idx):
         label = one_hot(self.labels[idx].astype(int), self.num_classes)
@@ -98,13 +96,9 @@ class EEGDatasetExp2(EEGDataset):
             return torch.Tensor(self.data[idx]), torch.Tensor(label)
 
     def load(self):
-        if os.path.exists(self.erp_path) and os.path.exists(self.label_path):
-            return (np.load(self.erp_path), np.load(self.label_path))
-
         erps, labels = [], []
-        par_numbers = TRAIN_PARTICIPANT_NUMBERS if self.train else TEST_PARTICIPANT_NUMBERS
 
-        for number in par_numbers:
+        for number in self.par_numbers:
             number = str(number).zfill(3)
             erp_path = os.path.join(
                 self.path, 'erp', f'{self.type}_1B_ERP_{number}.mat')
@@ -152,28 +146,21 @@ class EEGDatasetExp2(EEGDataset):
 
 
 class EEGDatasetAction(EEGDataset):
-    def __init__(self, data_path: str, train: bool, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
-        super().__init__(data_path, train, type, net_type, balance)
+    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'eeg', balance: bool = True) -> None:
+        super().__init__(data_path, train, par_numbers, type, net_type, balance)
         self.erp_path, self.label_path = self.get_paths()
         self.data, self.labels = self.load()
         self.num_classes = 4
 
-        # if train:
-        #     if self.balanced:
-        #         self.balance()
-        # self.shuffle()
-
-        if not (os.path.exists(self.erp_path) or os.path.exists(self.label_path)):
-            self.save()
+        if train:
+            #     if self.balanced:
+            #         self.balance()
+            self.shuffle()
 
     def load(self):
-        if os.path.exists(self.erp_path) and os.path.exists(self.label_path):
-            return (np.load(self.erp_path), np.load(self.label_path))
-
-        par_numbers = TRAIN_PARTICIPANT_NUMBERS if self.train else TEST_PARTICIPANT_NUMBERS
         erps, labels = [], []
 
-        for number in par_numbers:
+        for number in self.par_numbers:
             number = str(number).zfill(3)
             erp_path = os.path.join(
                 self.path, 'erp', f'{self.type}_1B_ERP_{number}.mat')
@@ -268,13 +255,16 @@ class EEGDatasetActionTrajectory(EEGDataset):
             erp = np.delete(erp, index_to_drop, axis=2)
             beh_df = beh_df.drop(index_to_drop)
 
+            assert erp.shape[2] == beh_df.shape[0]
+
             label = beh_df['SqChs'].values - 1
-            
-            erps.append(normalize(erp))
+
+            # erps.append(normalize(erp))
+            erps.append(erp)
             labels.append(label)
 
         return erps, labels
-    
+
     def save(self):
         pickle.dump(self.data, open(self.erp_path, 'wb'))
         pickle.dump(self.labels, open(self.label_path, 'wb'))

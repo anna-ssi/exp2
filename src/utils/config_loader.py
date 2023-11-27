@@ -18,6 +18,7 @@ class ConfigLoader:
         self.epochs = config['epochs']
         self.test_size = config.get('test_size', 0.1)
         self.net_type = config.get('net_type', None)
+        self.kfold = config.get('kfold', 5)
 
         self.optim = OptimConfig(**config['optim'])
 

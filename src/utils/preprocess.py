@@ -26,6 +26,7 @@ def read_csv_file(path: str, header=None, names=['label']):
     data = pd.read_csv(path, header=header, names=names)
     return data
 
+
 def read_behavior_data(path: str):
     """
     Read behavior data from a .mat file
@@ -35,7 +36,7 @@ def read_behavior_data(path: str):
     df = read_csv_file(path, header=0, names=None)
     df = df.sort_values(by=["BlockNum", "Trial"], ascending=True)
     df = df[df.ForcedChoice == 0]
-    
+
     return df
 
 
@@ -54,9 +55,3 @@ def get_waveform(data, type='delta'):
         data = data[:, 12:, :]
 
     return data.transpose(3, 1, 0, 2)
-
-
-if __name__ == '__main__':
-    erp = read_erp_file('./data/wav/Risk_1B_WAV_002.mat')
-    erp = get_waveform(erp, 'delta')
-    print(erp.shape)
