@@ -134,7 +134,6 @@ if __name__ == '__main__':
                                   model.hid_channels).to(device)
 
                 for i in range(len(labels)):
-                    print(i)
                     eeg, label = eegs[:, :, i], labels[i]
                     eeg, label = torch.Tensor(eeg).unsqueeze(
                         0), torch.LongTensor([label])

@@ -133,8 +133,11 @@ class EEGDatasetExp2(EEGDataset):
 
         new_samples_idx = np.random.choice(
             len(minor_class_idx), size=difference)
+        new_data = data[new_samples_idx]
+        noise = gaussian_noise(new_data, std=0.01)
+        new_data = new_data + noise
 
-        new_data = np.concatenate((self.data, data[new_samples_idx]), axis=0)
+        new_data = np.concatenate((self.data, new_data), axis=0)
         new_labels = np.concatenate((self.labels, labels), axis=0)
 
         self.data = new_data
@@ -199,6 +202,7 @@ class EEGDatasetAction(EEGDataset):
         _, counts = np.unique(self.labels, return_counts=True)
         max_class = np.argmax(counts)
         difference = [np.abs(counts[max_class] - counts[i]) for i in range(4)]
+        noise = gaussian_noise(self.data, std=0.01)
 
         for i, diff in enumerate(difference):
             if diff == 0:
@@ -209,9 +213,10 @@ class EEGDatasetAction(EEGDataset):
 
             new_samples_idx = np.random.choice(
                 len(class_idx), size=diff)
+            new_noise = noise[new_samples_idx]
+            new_data = data[new_samples_idx] + new_noise
 
-            new_data = np.concatenate(
-                (self.data, data[new_samples_idx]), axis=0)
+            new_data = np.concatenate((self.data, new_data), axis=0)
             new_labels = np.concatenate((self.labels, labels), axis=0)
 
             self.data = new_data
@@ -224,6 +229,8 @@ class EEGDatasetActionTrajectory(EEGDataset):
         self.erp_path, self.label_path = self.get_paths()
         self.data, self.labels = self.load()
         self.num_classes = 4
+        if train:
+            self.augument()
 
         if not (os.path.exists(self.erp_path) or os.path.exists(self.label_path)):
             self.save()
@@ -259,11 +266,23 @@ class EEGDatasetActionTrajectory(EEGDataset):
 
             label = beh_df['SqChs'].values - 1
 
-            # erps.append(normalize(erp))
-            erps.append(erp)
+            erps.append(normalize(erp))
             labels.append(label)
 
         return erps, labels
+
+    def augument(self, percentage=0.7):
+        amount = int(len(self.data) * percentage)
+        random_idxs = np.random.choice(len(self.data), size=amount)
+
+        for idx in random_idxs:
+            erp = self.data[idx]
+            label = self.labels[idx]
+
+            noise = gaussian_noise(erp, std=0.01)
+            erp = erp + noise
+            self.data.append(erp)
+            self.labels.append(label)
 
     def save(self):
         pickle.dump(self.data, open(self.erp_path, 'wb'))

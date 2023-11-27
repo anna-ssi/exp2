@@ -44,6 +44,11 @@ def normalize(data):
     return (data - np.mean(data)) / np.std(data)
 
 
+def gaussian_noise(data, mean=0, std=0.1):
+    noise = np.random.normal(mean, std, data.shape)
+    return noise
+
+
 def get_waveform(data, type='delta'):
     if type == 'delta':
         data = data[:, :4, :]
