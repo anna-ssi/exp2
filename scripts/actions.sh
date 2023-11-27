@@ -9,7 +9,6 @@
 
 module load python/3.10.2
 source ./venv/bin/activate
-pip install -e .
 
 declare -a arr=("eeg" "lstm" "dcgnn" "vit")
 for i in "${arr[@]}"
