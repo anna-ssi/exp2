@@ -1,4 +1,4 @@
-scipy==1.11.3
+scipy
 pandas==2.1.1
 torch==2.1.0
 torchaudio==2.1.0
