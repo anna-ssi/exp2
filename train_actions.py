@@ -58,7 +58,7 @@ def evaluate(model, data_loader):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint_path', type=str,
-                        default='./checkpoints/actions/')
+                        default='$SCRATCH/checkpoints/actions/')
     parser.add_argument('--data_path', type=str, default='./data/')
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--gpu', action='store_true', default=False)
