@@ -6,12 +6,10 @@ import torch
 from torch import nn
 
 from tqdm import tqdm
-from sklearn.metrics import precision_score, recall_score, accuracy_score
+from torcheeg.models import BUNet
 
 from src.utils.dataset import EEGDatasetActionTrajectory
 from src.utils.helper import *
-
-from torcheeg.models import BUNet
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -49,7 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--balance', action='store_true', default=False)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--kfold', type=int, default=5)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--data', type=str, default='Safe',
                         choices=['Safe', 'Risk'])
