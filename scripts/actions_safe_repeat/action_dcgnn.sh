@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --time=0-02:55
 #SBATCH --mem=16G
-#SBATCH -o ./results/actions_repeat_dcgnn.out
+#SBATCH -o ./results/aug/actions_repeat_dcgnn.out
 
 module load python/3.10.2
 source ./venv/bin/activate
