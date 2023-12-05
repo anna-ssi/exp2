@@ -139,6 +139,8 @@ if __name__ == '__main__':
             running_loss = 0
             for data in train_loader:
                 eeg, labels = data
+                print(eeg.shape, labels.shape)
+                exit()
                 eeg, labels = eeg.to(device), labels.to(device)
 
                 optimizer.zero_grad()
