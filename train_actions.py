@@ -139,8 +139,6 @@ if __name__ == '__main__':
             running_loss = 0
             for data in train_loader:
                 eeg, labels = data
-                print(eeg.shape, labels.shape)
-                exit()
                 eeg, labels = eeg.to(device), labels.to(device)
 
                 optimizer.zero_grad()
@@ -171,6 +169,8 @@ if __name__ == '__main__':
             results_file.write(
                 f"Epoch: {epoch}\nTrain: {dict_to_string(train_results)}\nTest: {dict_to_string(test_results)}\n\n")
 
+        print("Best Test Accuracy: ", best_acc, "Best Test Precision: ",
+              best_prec, "Best Test Recall: ", best_recall, "Best Test F1: ", best_f)
         avg_best_acc += best_acc
         avg_best_prec += best_prec
         avg_best_recall += best_recall

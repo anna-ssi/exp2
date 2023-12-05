@@ -19,7 +19,8 @@ class Identity(nn.Module):
 def plot_tsne(data_tsne, labels, title, save_path=None):
     plt.figure(figsize=(10, 10))
     plt.scatter(data_tsne[:, 0], data_tsne[:, 1], c=labels)
-    plt.title(title)
+    plt.title('t-SNE plot of action selection in safe environmrnt')
+    
     plt.colorbar()
     if save_path is not None:
         plt.savefig(save_path)
@@ -31,7 +32,7 @@ if __name__ == '__main__':
     model = DGCNN(in_channels=601, num_electrodes=61, num_classes=4)
     model.fc2 = Identity()
     
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("Device: ", device)
 
     test_participants = [2]
@@ -48,12 +49,11 @@ if __name__ == '__main__':
         erp_data = read_erp_file(erp_path)
         label = read_csv_file(csv_path)
         erp = normalize(erp_data)
+        erp = np.transpose(erp, axes=(2, 0, 1))
         
         with torch.no_grad():
-            erp = torch.from_numpy(erp).to(device)
+            erp = torch.Tensor(erp).to(device)
             erp = model(erp)
-            print(erp.shape)
-            exit()
             erps.append(erp.squeeze().numpy())
             
         labels.append(label)
@@ -61,4 +61,5 @@ if __name__ == '__main__':
     erps = np.concatenate(erps, axis=0)
     labels = np.concatenate(labels, axis=0)
         
-        
+    tsne_data = tsne.fit_transform(erps)
+    print(tsne_data.shape)
