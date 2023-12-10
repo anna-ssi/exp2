@@ -38,8 +38,7 @@ def evaluate(model, loader):
             loss = F.cosine_similarity(pred_eeg, next_eeg).mean()
             running_loss += loss.item()
 
-    return {'cos_sim': running_loss / len(loader),
-            'p_val': 0}
+    return running_loss / len(loader)
 
 
 if __name__ == '__main__':
@@ -57,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--data', type=str, default='Safe',
                         choices=['Safe', 'Risk'])
-    parser.add_argument('--pre_trained_model', type=str, default='dcgnn',
+    parser.add_argument('--pre_trained_model', type=str, default='lstm',
                         choices=['lstm', 'dcgnn'])
 
     args = parser.parse_args()
@@ -87,11 +86,15 @@ if __name__ == '__main__':
     # Load pre-trained model
     pre_trained_model_weigths = torch.load(args.pt, map_location=device)
     if args.pre_trained_model == 'lstm':
-        pt_model = LSTM(in_channels=601, num_electrodes=61, num_classes=4)
+        pt_model = LSTM(num_electrodes=61, num_classes=4)
     elif args.pre_trained_model == 'dcgnn':
         pt_model = DGCNN(in_channels=601, num_electrodes=61, num_classes=4)
     pt_model.load_state_dict(pre_trained_model_weigths)
-    pt_model.fc2 = Identity()
+    
+    if args.pre_trained_model == 'lstm':
+        pt_model.out = Identity()
+    else:
+        pt_model.fc2 = Identity()
 
     # Loading model
     model = EncoderDecoder().to(device)
@@ -125,14 +128,14 @@ if __name__ == '__main__':
             optimizer.step()
 
         # Validation accuracy
-        train_results = evaluate(model, train_loader)
-        test_results = evaluate(model, test_loader)
+        train_cos = evaluate(model, train_loader)
+        test_cos = evaluate(model, test_loader)
 
-        if test_results['cos_sim'] > best_cos:
-            best_cos = test_results['cos_sim']
+        if test_cos > best_cos:
+            best_cos = test_cos
             torch.save(model.state_dict(), model_save_path)
-            print("Best cosine similarity: ", best_cos, ", best p_val: ", test_results['p_val'])
+            print(f"Best cosine similarity: {best_cos}")
             
         # Save results
         results_file.write(
-            f"Epoch: {epoch} - train: {dict_to_string(train_results)}, test: {dict_to_string(test_results)}\n\n")
+            f"Epoch: {epoch} - train: {train_cos}, test: {test_cos}\n\n")
