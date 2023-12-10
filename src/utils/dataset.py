@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pickle
+import random
 
 import torch
 from torch.utils.data import Dataset
@@ -223,24 +224,31 @@ class EEGDatasetAction(EEGDataset):
             self.labels = new_labels
 
 
-class EEGDatasetActionTrajectory(EEGDataset):
-    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'lstm', balance: bool = False) -> None:
+class EEGModelDataset(EEGDataset):
+    def __init__(self, data_path: str, train: bool, par_numbers: list, type: str = 'Safe', net_type: str = 'lstm', balance: bool = False,
+                 model=None, device=None) -> None:
         super().__init__(data_path, train, par_numbers, type, net_type, balance)
-        self.erp_path, self.label_path = self.get_paths()
-        self.data, self.labels = self.load()
-        self.num_classes = 4
-        if train:
-            self.augument()
+        self.model = model
+        self.device = device
 
-        if not (os.path.exists(self.erp_path) or os.path.exists(self.label_path)):
+        self.erp_path = self.get_paths(folder_name=f'model/{type}')
+        self.state, self.next_state = self.load()
+        print(self.state.shape, self.next_state.shape)
+        
+        if not os.path.exists(self.erp_path):
             self.save()
 
+    def __getitem__(self, idx):
+        return self.state[idx], self.next_state[idx]
+
+    def __len__(self):
+        return len(self.state)
+
     def load(self):
-        if os.path.exists(self.erp_path) and os.path.exists(self.label_path):
-            return (pickle.load(open(self.erp_path, 'rb')), pickle.load(open(self.label_path, 'rb')))
+        if os.path.exists(os.path.join(self.erp_path, 'state.npy')):
+            return np.load(os.path.join(self.erp_path, 'state.npy')), np.load(os.path.join(self.erp_path, 'next_state.npy'))
 
-        erps, labels = [], []
-
+        erps = []
         for number in self.par_numbers:
             number = str(number).zfill(3)
             erp_path = os.path.join(
@@ -260,42 +268,42 @@ class EEGDatasetActionTrajectory(EEGDataset):
             # remove trials with no response
             index_to_drop = beh_df[beh_df['Response'] == 0].index
             erp = np.delete(erp, index_to_drop, axis=2)
-            beh_df = beh_df.drop(index_to_drop)
 
-            assert erp.shape[2] == beh_df.shape[0]
+            erp = normalize(erp)
+            erp = np.transpose(erp, axes=(2, 0, 1))
 
-            label = beh_df['SqChs'].values - 1
+            with torch.no_grad():
+                erp = torch.Tensor(erp).to(self.device)
+                erp = self.model(erp)
+                erps.append(erp.squeeze().numpy())
 
-            erps.append(normalize(erp))
-            labels.append(label)
+            erps.append(erp)
 
-        return erps, labels
+        return self.split(erps)
 
-    def augument(self, percentage=0.7):
-        amount = int(len(self.data) * percentage)
-        random_idxs = np.random.choice(len(self.data), size=amount)
+    @staticmethod
+    def split(data):
+        state, next_state = [], []
+        for erp in data:
+            for idx in range(len(erp)):
+                if idx >= len(erp) - 1:
+                    continue
+                s_t, s_tt = erp[idx], erp[idx+1]
+                state.append(s_t)
+                next_state.append(s_tt)
 
-        for idx in random_idxs:
-            erp = self.data[idx]
-            label = self.labels[idx]
-
-            noise = gaussian_noise(erp, std=0.01)
-            erp = erp + noise
-            self.data.append(erp)
-            self.labels.append(label)
+        state = np.array(state)
+        next_state = np.array(next_state)
+        return state, next_state
 
     def save(self):
-        pickle.dump(self.data, open(self.erp_path, 'wb'))
-        pickle.dump(self.labels, open(self.label_path, 'wb'))
+        np.save(os.path.join(self.erp_path, 'state'), self.state)
+        np.save(os.path.join(self.erp_path, 'next_state'), self.next_state)
 
-    def get_paths(self, folder_name='actions_seq'):
+    def get_paths(self, folder_name):
         path = os.path.join(self.path, folder_name)
-        os.makedirs(path, exist_ok=True)
         schema = 'train' if self.train else 'test'
-        balance = 'balanced' if self.balanced else ''
+        eeg_path = os.path.join(path, schema)
 
-        eeg_path = os.path.join(
-            path, f'{self.type}_erp_{schema}_{balance}.pickle')
-        label_path = os.path.join(
-            path, f'{self.type}_label_{schema}_{balance}.pickle')
-        return eeg_path, label_path
+        os.makedirs(eeg_path, exist_ok=True)
+        return eeg_path
